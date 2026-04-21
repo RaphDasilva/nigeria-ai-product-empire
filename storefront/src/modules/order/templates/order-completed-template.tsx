@@ -8,6 +8,7 @@ import OnboardingCta from "@modules/order/components/onboarding-cta"
 import OrderDetails from "@modules/order/components/order-details"
 import ShippingDetails from "@modules/order/components/shipping-details"
 import PaymentDetails from "@modules/order/components/payment-details"
+import PixelPurchase from "@modules/common/components/pixel-purchase"
 import { HttpTypes } from "@medusajs/types"
 
 type OrderCompletedTemplateProps = {
@@ -21,8 +22,17 @@ export default async function OrderCompletedTemplate({
 
   const isOnboarding = cookies.get("_medusa_onboarding")?.value === "true"
 
+  const orderAmount = (order.total ?? 0) / 100
+  const productTitle =
+    order.items?.[0]?.title ?? "Digital Product"
+
   return (
     <div className="py-6 min-h-[calc(100vh-64px)]">
+      <PixelPurchase
+        value={orderAmount}
+        currency="NGN"
+        contentName={productTitle}
+      />
       <div className="content-container flex flex-col justify-center items-center gap-y-10 max-w-4xl h-full w-full">
         {isOnboarding && <OnboardingCta orderId={order.id} />}
         <div
