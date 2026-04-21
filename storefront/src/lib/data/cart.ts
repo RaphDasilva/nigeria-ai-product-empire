@@ -5,6 +5,7 @@ import medusaError from "@lib/util/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
+import { headers as nextHeaders, cookies as nextCookies } from "next/headers"
 import {
   getAuthHeaders,
   getCacheOptions,
@@ -15,6 +16,7 @@ import {
 } from "./cookies"
 import { getRegion } from "./regions"
 import { getLocale } from "@lib/data/locale-actions"
+import { sendCAPIEvent, extractUserDataFromHeaders } from "@lib/facebook/capi"
 
 /**
  * Retrieves a cart by its ID. If no ID is provided, it will use the cart ID from the cookies.
@@ -155,6 +157,23 @@ export async function addToCart({
       revalidateTag(fulfillmentCacheTag)
     })
     .catch(medusaError)
+
+  // CAPI: AddToCart
+  const headersList = await nextHeaders()
+  const cookiesList = await nextCookies()
+  const referer =
+    headersList.get("referer") ||
+    `${process.env.NEXT_PUBLIC_BASE_URL}/${countryCode}/products`
+  await sendCAPIEvent({
+    eventName: "AddToCart",
+    eventSourceUrl: referer,
+    userData: extractUserDataFromHeaders(headersList, cookiesList),
+    customData: {
+      content_ids: [variantId],
+      content_type: "product",
+      currency: "NGN",
+    },
+  })
 }
 
 export async function updateLineItem({
@@ -245,14 +264,38 @@ export async function initiatePaymentSession(
     ...(await getAuthHeaders()),
   }
 
-  return sdk.store.payment
+  const resp = await sdk.store.payment
     .initiatePaymentSession(cart, data, {}, headers)
-    .then(async (resp) => {
+    .then(async (r) => {
       const cartCacheTag = await getCacheTag("carts")
       revalidateTag(cartCacheTag)
-      return resp
+      return r
     })
     .catch(medusaError)
+
+  // CAPI: AddPaymentInfo
+  const headersList = await nextHeaders()
+  const cookiesList = await nextCookies()
+  const referer =
+    headersList.get("referer") ||
+    `${process.env.NEXT_PUBLIC_BASE_URL}/checkout`
+  await sendCAPIEvent({
+    eventName: "AddPaymentInfo",
+    eventSourceUrl: referer,
+    userData: {
+      ...extractUserDataFromHeaders(headersList, cookiesList),
+      email: cart.email,
+      phone: cart.shipping_address?.phone,
+      firstName: cart.shipping_address?.first_name,
+      lastName: cart.shipping_address?.last_name,
+    },
+    customData: {
+      currency: "NGN",
+      value: (cart.total ?? 0) / 100,
+    },
+  })
+
+  return resp
 }
 
 export async function applyPromotions(codes: string[]) {
@@ -419,6 +462,34 @@ export async function placeOrder(cartId?: string) {
     revalidateTag(orderCacheTag)
 
     removeCartId()
+
+    // CAPI: Purchase — must fire before redirect() throws NEXT_REDIRECT
+    const headersList = await nextHeaders()
+    const cookiesList = await nextCookies()
+    const confirmedUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/${countryCode}/order/${cartRes.order.id}/confirmed`
+    await sendCAPIEvent({
+      eventName: "Purchase",
+      eventSourceUrl: confirmedUrl,
+      eventId: cartRes.order.id,
+      userData: {
+        ...extractUserDataFromHeaders(headersList, cookiesList),
+        email: cartRes.order.email,
+        phone: cartRes.order.shipping_address?.phone,
+        firstName: cartRes.order.shipping_address?.first_name,
+        lastName: cartRes.order.shipping_address?.last_name,
+      },
+      customData: {
+        currency: "NGN",
+        value: (cartRes.order.total ?? 0) / 100,
+        content_ids: cartRes.order.items
+          ?.map((i) => i.variant_id)
+          .filter(Boolean),
+        content_type: "product",
+        order_id: cartRes.order.id,
+        content_name: cartRes.order.items?.[0]?.title ?? "Digital Product",
+      },
+    })
+
     redirect(`/${countryCode}/order/${cartRes?.order.id}/confirmed`)
   }
 

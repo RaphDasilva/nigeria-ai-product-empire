@@ -1,9 +1,11 @@
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
+import { headers as nextHeaders, cookies as nextCookies } from "next/headers"
 import { listProducts } from "@lib/data/products"
 import { getRegion, listRegions } from "@lib/data/regions"
 import ProductTemplate from "@modules/products/templates"
 import { HttpTypes } from "@medusajs/types"
+import { sendCAPIEvent, extractUserDataFromHeaders } from "@lib/facebook/capi"
 
 type Props = {
   params: Promise<{ countryCode: string; handle: string }>
@@ -119,6 +121,20 @@ export default async function ProductPage(props: Props) {
   if (!pricedProduct) {
     notFound()
   }
+
+  // CAPI: ViewContent
+  const headersList = await nextHeaders()
+  const cookiesList = await nextCookies()
+  await sendCAPIEvent({
+    eventName: "ViewContent",
+    eventSourceUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/${params.countryCode}/products/${params.handle}`,
+    userData: extractUserDataFromHeaders(headersList, cookiesList),
+    customData: {
+      content_ids: [pricedProduct.id],
+      content_name: pricedProduct.title,
+      content_type: "product",
+    },
+  })
 
   return (
     <ProductTemplate

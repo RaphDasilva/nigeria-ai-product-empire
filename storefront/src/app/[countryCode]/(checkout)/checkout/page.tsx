@@ -5,6 +5,8 @@ import CheckoutForm from "@modules/checkout/templates/checkout-form"
 import CheckoutSummary from "@modules/checkout/templates/checkout-summary"
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
+import { headers as nextHeaders, cookies as nextCookies } from "next/headers"
+import { sendCAPIEvent, extractUserDataFromHeaders } from "@lib/facebook/capi"
 
 export const metadata: Metadata = {
   title: "Checkout",
@@ -18,6 +20,28 @@ export default async function Checkout() {
   }
 
   const customer = await retrieveCustomer()
+
+  // CAPI: InitiateCheckout
+  const headersList = await nextHeaders()
+  const cookiesList = await nextCookies()
+  await sendCAPIEvent({
+    eventName: "InitiateCheckout",
+    eventSourceUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/checkout`,
+    userData: {
+      ...extractUserDataFromHeaders(headersList, cookiesList),
+      email: cart.email ?? customer?.email,
+      phone: cart.shipping_address?.phone ?? customer?.phone,
+      firstName:
+        cart.shipping_address?.first_name ?? customer?.first_name,
+      lastName:
+        cart.shipping_address?.last_name ?? customer?.last_name,
+    },
+    customData: {
+      currency: "NGN",
+      value: (cart.total ?? 0) / 100,
+      num_items: cart.items?.length ?? 0,
+    },
+  })
 
   return (
     <div className="grid grid-cols-1 small:grid-cols-[1fr_416px] content-container gap-x-40 py-12">
