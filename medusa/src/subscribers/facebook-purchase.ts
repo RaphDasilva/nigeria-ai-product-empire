@@ -113,7 +113,7 @@ export default async function facebookPurchaseHandler({
       phone: billing?.phone || shipping?.phone || null,
       firstName: billing?.first_name || shipping?.first_name || null,
       lastName: billing?.last_name || shipping?.last_name || null,
-      valueNGN: (order.total ?? 0) / 100,
+      valueNGN: Number(order.total ?? 0) / 100,
       contentIds: (order.items ?? [])
         .map((i) => i.variant_id)
         .filter((id): id is string => Boolean(id)),
